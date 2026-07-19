@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <!-- Variante monochrome, exigee par le Marketplace pour les icones de liste
-       et de categorie : trait blanc #FFFFFF, fond transparent, aucune couleur.
-       Dessin simplifie pour rester lisible a 20x20. -->
+  <!-- Monochrome variant, required by the Marketplace for action list and
+       category icons: #FFFFFF stroke, transparent background, no colour.
+       Simplified so it stays legible at 20x20. -->
   <g fill="none" stroke="#FFFFFF" stroke-width="1.5"
      stroke-linecap="round" stroke-linejoin="round">
     <rect x="1.25" y="7" width="21.5" height="10" rx="2.5"/>

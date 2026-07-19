@@ -1,10 +1,10 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// YTMD Full Strip — compose une image 800x100 (pochette + titre + progression)
-// et la repartit sur les 4 encodeurs du Stream Deck +, une tranche 200x100 par
-// dial. Les tests de couture ont montre que les rects [0,0,200,100] sont
-// honores sans marge : les 4 tranches se raboutent sans discontinuite.
+// YTMD Full Strip — composes an 800x100 image (album art + title + progress)
+// and spreads it across the Stream Deck + dials, one 200x100 slice each.
+// Seam testing showed that [0,0,200,100] layout rects are honoured without
+// any inset, so the slices butt together with no visible discontinuity.
 // ---------------------------------------------------------------------------
 
 const YTMD = {
@@ -17,7 +17,7 @@ const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 9863;
 const DEFAULT_SLOTS = 4;
 
-// Reglages pilotes par le Property Inspector (global settings).
+// Settings driven by the Property Inspector (stored as global settings).
 let host = DEFAULT_HOST;
 let port = DEFAULT_PORT;
 let slots = DEFAULT_SLOTS;
@@ -25,34 +25,34 @@ let slots = DEFAULT_SLOTS;
 const STRIP_H = 100;
 const SLOT_W = 200;
 
-// Largeur de composition : autant de tranches de 200px que d'encodeurs occupes.
+// Composition width: one 200px slice per occupied dial.
 let stripW = DEFAULT_SLOTS * SLOT_W;
 
 function baseUrl() {
   return 'http://' + host + ':' + port;
 }
-const ART = 100;          // pochette carree, calee dans le slot 0
-const PAD = 12;           // marge entre pochette et texte
+const ART = 100;          // square album art, sits entirely inside slot 0
+const PAD = 12;           // gap between album art and text
 const POLL_MS = 1000;
 
-// trackState renvoye par YTMD
+// trackState values reported by YTMD
 const TRACK_PAUSED = 0;
 const TRACK_PLAYING = 1;
 
 let ws = null;
 let pluginUUID = null;
 let token = null;
-const AUTH_RETRY_MS = 10000;          // recul apres un echec d'autorisation
-const AUTH_RETRY_LIMITED_MS = 60000;  // recul apres un 429
+const AUTH_RETRY_MS = 10000;          // back-off after a failed authorization
+const AUTH_RETRY_LIMITED_MS = 60000;  // back-off after a 429
 
 let authInFlight = false;
 let authRetryAt = 0;
 let authCode = null;
 let lastError = null;
-let piContext = null;   // contexte du Property Inspector, s'il est ouvert
+let piContext = null;   // Property Inspector context, when it is open
 
-// Les global settings portent aussi hote/port/tranches : ne jamais les ecraser
-// en n'ecrivant que le jeton.
+// Global settings also carry host/port/slots: never clobber them by writing
+// the token alone.
 function persistSettings(extra) {
   send({
     event: 'setGlobalSettings',
@@ -61,11 +61,11 @@ function persistSettings(extra) {
   });
 }
 
-const dials = new Map();       // context -> colonne 0..3
+const dials = new Map();       // context -> column 0..3
 
-// Les guidelines du Marketplace demandent d'avertir l'utilisateur des echecs
-// via showAlert. On ne le declenche que sur un changement d'erreur : sinon la
-// boucle de reessai ferait clignoter l'alerte indefiniment.
+// Marketplace guidelines require surfacing failures through showAlert. It is
+// only fired when the error actually changes: otherwise the retry loop would
+// make the alert blink forever.
 function alertDials() {
   dials.forEach(function (column, context) {
     send({ event: 'showAlert', context: context });
@@ -80,8 +80,8 @@ function setError(message) {
 }
 
 const artCache = new Map();    // url -> ImageBitmap | HTMLImageElement
-const artFailed = new Map();   // url -> horodatage du dernier echec (retry differé)
-const artInflight = new Set(); // url en cours de chargement
+const artFailed = new Map();   // url -> timestamp of last failure (deferred retry)
+const artInflight = new Set(); // url currently being fetched
 
 const ART_RETRY_MS = 30000;
 
@@ -96,7 +96,7 @@ const slot = document.getElementById('slot');
 const slotCtx = slot.getContext('2d');
 
 // ---------------------------------------------------------------------------
-// Liaison Stream Deck
+// Stream Deck plumbing
 // ---------------------------------------------------------------------------
 
 function send(payload) {
@@ -152,7 +152,7 @@ function handleEvent(msg) {
     case 'willAppear': {
       const coords = msg.payload && msg.payload.coordinates;
       dials.set(msg.context, coords ? coords.column : 0);
-      lastPaintKey = '';   // force un repaint sur le nouveau dial
+      lastPaintKey = '';   // force a repaint on the newly added dial
       break;
     }
     case 'willDisappear':
@@ -166,7 +166,7 @@ function handleEvent(msg) {
       command('playPause');
       break;
     case 'dialUp':
-      flushVolume();   // garantit que la derniere valeur de la molette part bien
+      flushVolume();   // make sure the final dial value is actually sent
       break;
     default:
       break;
@@ -174,12 +174,12 @@ function handleEvent(msg) {
 }
 
 // ---------------------------------------------------------------------------
-// Reglages (Property Inspector)
+// Settings (Property Inspector)
 // ---------------------------------------------------------------------------
 
-// Les reglages sont globaux : ils valent pour les quatre dials a la fois.
-// Un changement d'hote ou de port impose de rouvrir la socket temps reel ;
-// un changement du nombre de tranches impose de redimensionner la toile.
+// Settings are global: they apply to every dial at once. Changing host or
+// port requires reopening the real-time socket; changing the slice count
+// requires resizing the canvas.
 function applySettings(settings) {
   const wasToken = token;
   const previousEndpoint = host + ':' + port;
@@ -192,7 +192,7 @@ function applySettings(settings) {
   if (wanted !== slots) {
     slots = wanted;
     stripW = slots * SLOT_W;
-    strip.width = stripW;          // redimensionner remet la toile a zero
+    strip.width = stripW;          // resizing also clears the canvas
     log('composing across ' + slots + ' slice(s), ' + stripW + 'px wide');
   }
 
@@ -212,9 +212,9 @@ function resetAuth() {
   token = null;
   authCode = null;
   setError(null);
-  authRetryAt = 0;   // le bouton doit relancer la demande immediatement
+  authRetryAt = 0;   // the button must trigger a new request right away
   dropRealtime();
-  // On conserve hote/port/tranches, on n'oublie que le jeton.
+  // Keep host/port/slots, forget only the token.
   send({
     event: 'setGlobalSettings',
     context: pluginUUID,
@@ -227,7 +227,7 @@ function resetAuth() {
 function dropRealtime() {
   rtReady = false;
   if (rt) {
-    try { rt.close(); } catch (e) { /* deja fermee */ }
+    try { rt.close(); } catch (e) { /* already closed */ }
     rt = null;
   }
   rtRetryAt = 0;
@@ -268,8 +268,8 @@ function sendStatus() {
 // ---------------------------------------------------------------------------
 
 async function api(path, options) {
-  // no-store est indispensable : sans lui Chromium ressert la premiere reponse
-  // de /state en cache et l'affichage reste fige sur le premier echantillon.
+  // no-store is mandatory: without it Chromium serves the first /state
+  // response from cache forever and the display freezes on that sample.
   const opts = Object.assign({ cache: 'no-store', headers: {} }, options || {});
   opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers);
   if (token) {
@@ -289,10 +289,10 @@ async function command(name, data) {
   }
 }
 
-// Un cran de molette = un evenement dialRotate. Envoyer un setVolume par cran
-// declenche le rate-limit de YTMD (HTTP 429). On coalesce : au plus une commande
-// tous les VOLUME_MIN_MS, la derniere valeur etant poussee au relachement.
-// Pas de setTimeout ici : les timers de cette page sont brides a ~5s.
+// One detent = one dialRotate event. Sending a setVolume per detent trips
+// YTMD's rate limit (HTTP 429). Commands are coalesced instead: at most one
+// every VOLUME_MIN_MS, with the final value flushed on release.
+// No setTimeout here — see the metronome note about background timers.
 const VOLUME_MIN_MS = 200;
 let pendingVolume = null;
 let lastVolumeSentAt = 0;
@@ -314,13 +314,13 @@ function flushVolume() {
   command('setVolume', value);
 }
 
-// Demande de token. YTMD affiche un code que l'utilisateur doit approuver ;
-// /auth/request bloque jusqu'a l'approbation.
+// Token request. YTMD shows a code the user must approve; /auth/request
+// blocks until they do.
 //
-// Tant que l'utilisateur n'a pas coche "Enable companion authorization", le
-// serveur repond 403 : sans recul, on relancerait la demande a chaque tick et
-// YTMD finirait par nous rate-limiter (429). C'est le premier contact typique
-// d'un nouvel utilisateur, il doit rester silencieux cote serveur.
+// Until "Enable companion authorization" is ticked, the server answers 403.
+// Without a back-off we would re-request on every tick and YTMD would end up
+// rate limiting us (429). This is the typical first-run experience, so it has
+// to stay quiet on the server side.
 async function requestToken() {
   if (authInFlight || Date.now() < authRetryAt) { return; }
   authInFlight = true;
@@ -347,7 +347,7 @@ async function requestToken() {
     authCode = payload.code;
     setError(null);
     log('code to approve: ' + authCode);
-    paint();   // affiche le code sur le bandeau
+    paint();   // show the code on the strip
     sendStatus();
 
     const r2 = await api('/api/v1/auth/request', {
@@ -364,7 +364,7 @@ async function requestToken() {
     token = granted.token;
     authCode = null;
     setError(null);
-    // Le token vit dans les global settings de Stream Deck, pas en clair sur disque.
+    // The token lives in Stream Deck's global settings, not in a plaintext file.
     persistSettings({ token: token });
     log('token granted and stored');
     sendStatus();
@@ -378,16 +378,15 @@ async function requestToken() {
 }
 
 // ---------------------------------------------------------------------------
-// Temps reel (socket.io) — le seul moyen d'echapper au bridage des timers :
-// les trames reseau, elles, arrivent quand elles veulent. On parle le
-// protocole Engine.IO/Socket.IO v4 directement sur une WebSocket brute,
-// plutot que d'embarquer la bibliotheque socket.io.
+// Real time (socket.io). Push beats polling here: network frames arrive
+// whenever they arrive. The Engine.IO/Socket.IO v4 protocol is spoken
+// directly over a raw WebSocket rather than bundling the socket.io library.
 //
-//   "0{...}"            ouverture Engine.IO
-//   "40<ns>,<authJSON>" connexion au namespace (c'est nous qui l'envoyons)
-//   "42<ns>,[ev,data]"  evenement
-//   "2" / "3"           ping serveur / pong client
-//   "44<ns>,<err>"      connexion au namespace refusee
+//   "0{...}"            Engine.IO open
+//   "40<ns>,<authJSON>" namespace connect (we send this one)
+//   "42<ns>,[ev,data]"  event
+//   "2" / "3"           server ping / client pong
+//   "44<ns>,<err>"      namespace connection refused
 // ---------------------------------------------------------------------------
 
 const RT_NAMESPACE = '/api/v1/realtime';
@@ -440,8 +439,8 @@ function ensureRealtime() {
       try { frame = JSON.parse(json); } catch (e) { return; }
       if (frame[0] === 'state-update' && frame[1]) {
         state = frame[1];
-        // Ne pas ecraser la valeur locale tant qu'un cran attend son envoi,
-        // sinon la molette "recule" entre deux commandes coalescees.
+        // Do not overwrite the local value while a detent is still pending,
+        // otherwise the dial appears to jump back between coalesced commands.
         if (pendingVolume === null && state.player && typeof state.player.volume === 'number') {
           volume = state.player.volume;
         }
@@ -449,8 +448,8 @@ function ensureRealtime() {
 
         rtEvents += 1;
         if (rtEvents === 1) { rtFirstAt = Date.now(); }
-        // Trace rare (~toutes les 5 min) : suffit a confirmer que le push vit,
-        // sans noyer le log. YTMD emet environ toutes les 270 ms.
+        // Rare trace (~every 5 min): enough to confirm push is alive without
+        // drowning the log. YTMD emits roughly every 270 ms.
         if (rtEvents % 1000 === 0) {
           log('realtime: ' + rtEvents + ' state-update, ~'
             + Math.round((Date.now() - rtFirstAt) / rtEvents) + 'ms entre deux');
@@ -468,23 +467,22 @@ function ensureRealtime() {
     sendStatus();
   };
 
-  rt.onerror = function () { /* onclose suit toujours : on y gere la reprise */ };
+  rt.onerror = function () { /* onclose always follows: recovery is handled there */ };
 }
 
 function scheduleRealtimeRetry() {
   rtRetryAt = Date.now() + 5000;
 }
 
-// Metronome du polling de secours (le chemin nominal est le push socket.io).
+// Metronome for the fallback polling loop (the nominal path is socket.io push).
 //
-// Il est ici par precaution : la page d'un plugin n'est jamais visible, et
-// Chromium sait brider les timers des pages en arriere-plan. Les timers d'un
-// Worker y echappent. Honnetement, le bridage n'a PAS ete prouve sur ce
-// moteur — les ~5s mesurees pendant la mise au point venaient en fait de la
-// latence des fetch sous rate-limiting, pas du timer. Le Worker est donc
-// defensif plutot que strictement necessaire ; setInterval suffirait
-// probablement. Cree depuis une Blob URL, car un worker charge depuis
-// file:// serait refuse.
+// This is defensive: a plugin page is never visible, and Chromium is known to
+// throttle timers on backgrounded pages, which Worker timers escape. To be
+// honest, throttling was NOT actually proven on this engine — the ~5s spacing
+// measured during development turned out to be fetch latency under rate
+// limiting, not the timer. So the Worker is precautionary rather than strictly
+// required; plain setInterval would most likely do. Created from a Blob URL,
+// because a worker loaded from file:// would be rejected.
 function startMetronome() {
   try {
     const source = 'setInterval(function () { postMessage(0); }, ' + POLL_MS + ');';
@@ -508,23 +506,23 @@ async function tick() {
   }
 
   ensureRealtime();
-  flushVolume();   // rattrape un dernier cran de molette reste en attente
+  flushVolume();   // flush any dial detent still waiting to be sent
 
-  // Quand le push est actif, il fait tout le travail : ce polling bride a ~5s
-  // ne sert plus que de filet si la socket tombe.
+  // When push is active it does all the work; this polling loop is only a
+  // safety net for when the socket drops.
   if (rtReady) {
     ticks += 1;
     if (ticks % 600 === 0) { log('heartbeat: push active, dials=' + dials.size); }
     return;
   }
 
-  // Apres un 429, on laisse retomber la pression au lieu de marteler.
+  // After a 429, let the pressure drop instead of hammering.
   if (Date.now() < pollBackoffUntil) { return; }
 
   try {
     const r = await api('/api/v1/state');
     if (r.status === 401) {
-      token = null;                       // token revoque -> on repart en auth
+      token = null;                       // token revoked -> restart the auth flow
       persistSettings();
       sendStatus();
       return;
@@ -532,7 +530,7 @@ async function tick() {
     if (r.status === 429) {
       pollBackoffUntil = Date.now() + 20000;
       log('429: YTMD is rate limiting, pausing polling for 20s');
-      return;   // on garde l'affichage courant plutot que d'afficher une erreur
+      return;   // keep the current display rather than showing an error
     }
     if (!r.ok) { setError('state HTTP ' + r.status); paint(); return; }
     state = await r.json();
@@ -545,9 +543,7 @@ async function tick() {
     state = null;
   }
 
-  // Battement toutes les 15 s : prouve que la boucle tourne ET que la
-  // progression avance vraiment. C'est ce qui manquait pour diagnostiquer le gel.
-  // On n'arrive ici que si le push est tombe : le signaler, sans spammer.
+  // We only reach this point when push has dropped: report it, without spamming.
   ticks += 1;
   if (ticks % 12 === 0) {
     log('degraded: push unavailable, falling back to polling (dials=' + dials.size + ')');
@@ -557,12 +553,12 @@ async function tick() {
 }
 
 // ---------------------------------------------------------------------------
-// Pochette
+// Album art
 // ---------------------------------------------------------------------------
 
-// Deux voies, toutes deux gardant le canvas "propre" pour que toDataURL()
-// ne leve pas SecurityError : fetch->blob->ImageBitmap, puis repli sur un
-// <img crossOrigin="anonymous"> si le fetch est refuse.
+// Two routes, both keeping the canvas "clean" so that toDataURL() does not
+// throw SecurityError: fetch->blob->ImageBitmap first, then an
+// <img crossOrigin="anonymous"> fallback if the fetch is refused.
 async function fetchArt(url) {
   try {
     const r = await fetch(url, { cache: 'no-store' });
@@ -587,9 +583,9 @@ async function fetchArt(url) {
   return null;
 }
 
-// Synchrone : rend la pochette si elle est prete, sinon lance le chargement
-// et retourne null. Un echec est reessaye au bout de ART_RETRY_MS au lieu
-// d'etre memorise definitivement.
+// Synchronous: returns the album art if ready, otherwise kicks off the load
+// and returns null. A failure is retried after ART_RETRY_MS instead of being
+// remembered forever.
 function getArt(url) {
   if (!url) { return null; }
   if (artCache.has(url)) { return artCache.get(url); }
@@ -608,7 +604,7 @@ function getArt(url) {
     } else {
       artFailed.set(url, Date.now());
     }
-    lastPaintKey = '';   // force le repaint, que ce soit un succes ou un echec
+    lastPaintKey = '';   // force a repaint, on success as well as on failure
   });
   return null;
 }
@@ -649,7 +645,7 @@ function drawMessage(title, subtitle) {
 function drawNowPlaying(art, video, player) {
   const playing = player.trackState === TRACK_PLAYING;
 
-  // Fond : la pochette floutee et assombrie, etiree sur tout le bandeau.
+  // Background: the album art, blurred and darkened, stretched full width.
   sctx.fillStyle = '#0d0d16';
   sctx.fillRect(0, 0, stripW, STRIP_H);
   if (art) {
@@ -662,7 +658,7 @@ function drawNowPlaying(art, video, player) {
     sctx.fillRect(0, 0, stripW, STRIP_H);
   }
 
-  // Pochette nette, calee a gauche (entierement dans le slot 0).
+  // Sharp album art, flush left (entirely within slot 0).
   if (art) {
     sctx.drawImage(art, 0, 0, ART, ART);
   } else {
@@ -687,7 +683,7 @@ function drawNowPlaying(art, video, player) {
   const artist = [video.author, video.album].filter(Boolean).join('  ·  ');
   sctx.fillText(fitText(sctx, artist, w - 90), x, 66);
 
-  // Progression + minutage, aligne a droite du bandeau.
+  // Progress bar and timing, right-aligned on the strip.
   const duration = video.durationSeconds || 0;
   const progress = player.videoProgress || 0;
   const ratio = duration > 0 ? Math.min(1, progress / duration) : 0;
@@ -718,7 +714,7 @@ function paint() {
   const player = (state && state.player) || null;
   let art = null;
 
-  // Cle de repaint : on ne pousse des pixels que si quelque chose a bouge.
+  // Repaint key: only push pixels when something actually changed.
   let key;
   if (!token && authCode) {
     key = 'code:' + authCode;
@@ -762,8 +758,8 @@ function pushSlices() {
       });
     });
   } catch (e) {
-    // Typiquement SecurityError si le canvas a ete teinte par une image
-    // cross-origin : sans ce garde, l'echec serait totalement silencieux.
+    // Typically SecurityError if the canvas got tainted by a cross-origin
+    // image: without this guard the failure would be completely silent.
     log('pushSlices failed: ' + e.name + ' ' + e.message);
   }
 }

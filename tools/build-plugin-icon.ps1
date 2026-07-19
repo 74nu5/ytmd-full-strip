@@ -1,11 +1,13 @@
-# Genere icons/plugin.png (256) et icons/plugin@2x.png (512) a partir de la
-# geometrie de icons/plugin.svg.
+# Generates icons/plugin.png (256) and icons/plugin@2x.png (512) from the
+# geometry of icons/plugin.svg.
 #
-# Le Marketplace exige du PNG pour l'icone du plugin (256 et 512), alors que les
-# icones de liste et de categorie acceptent le SVG directement. Aucun rasteriseur
-# SVG n'etant requis pour construire ce projet, le trace est reproduit ici avec
-# System.Drawing dans le meme repere 256x256 que le SVG. Si tu modifies le SVG,
-# reporte le changement ici.
+# The Marketplace requires PNG for the plugin icon (256 and 512), while action
+# list and category icons accept SVG directly. Rather than pull in an SVG
+# rasteriser as a build dependency, the drawing is reproduced here with
+# System.Drawing in the same 256x256 coordinate space as the SVG.
+#
+# NOTE: this means the geometry lives in two places. If you change the SVG,
+# mirror the change here.
 
 Add-Type -AssemblyName System.Drawing
 
@@ -29,7 +31,7 @@ function Write-Icon([int]$size, [string]$path) {
     $g.SmoothingMode = 'AntiAlias'
     $g.InterpolationMode = 'HighQualityBicubic'
     $g.PixelOffsetMode = 'HighQuality'
-    # Tout est trace dans le repere 256x256 du SVG, puis mis a l'echelle.
+    # Everything is drawn in the SVG 256x256 space, then scaled.
     $g.ScaleTransform($size / 256.0, $size / 256.0)
 
     $bg = New-RoundedPath 0 0 256 256 56
@@ -40,19 +42,19 @@ function Write-Icon([int]$size, [string]$path) {
     $g.FillPath((New-Object System.Drawing.SolidBrush(
         [System.Drawing.Color]::FromArgb(0x23, 0x23, 0x36))), $strip)
 
-    # Separations entre encodeurs : blanc a 13 % d'opacite.
+    # Dial separations: white at 13% opacity.
     $sep = New-Object System.Drawing.Pen(
         [System.Drawing.Color]::FromArgb(33, 255, 255, 255), 2)
     foreach ($x in 74, 128, 182) { $g.DrawLine($sep, $x, 88, $x, 168) }
 
-    # L'onde, continue par-dessus les separations.
+    # The wave, continuous across the separations.
     $wave = New-Object System.Drawing.Pen(
         [System.Drawing.Color]::FromArgb(0xff, 0x2d, 0x55), 10)
     $wave.StartCap = 'Round'
     $wave.EndCap = 'Round'
     $wave.LineJoin = 'Round'
-    # Tableau explicitement type : sinon PowerShell passe un Object[] et
-    # DrawLines refuse la conversion.
+    # Explicitly typed array: otherwise PowerShell passes an Object[] and
+    # DrawLines refuses the conversion.
     [System.Drawing.PointF[]]$points = @(
         (New-Object System.Drawing.PointF(34, 128)),
         (New-Object System.Drawing.PointF(58, 104)),
