@@ -40,7 +40,7 @@ C'est tout ce que fait ce plugin.
 
 ## Installation
 
-1. Copier `src/eu.avonde.ytmdstrip.sdPlugin` dans
+1. Copier `src/dev.74nu5.ytmdstrip.sdPlugin` dans
    `%APPDATA%\Elgato\StreamDeck\Plugins\`
 2. Redémarrer le logiciel Stream Deck
 3. Dans YTMD : **Settings → Integrations**, activer *Companion Server* **et**

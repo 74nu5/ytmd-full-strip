@@ -42,7 +42,11 @@ const TRACK_PLAYING = 1;
 let ws = null;
 let pluginUUID = null;
 let token = null;
+const AUTH_RETRY_MS = 10000;          // recul apres un echec d'autorisation
+const AUTH_RETRY_LIMITED_MS = 60000;  // recul apres un 429
+
 let authInFlight = false;
+let authRetryAt = 0;
 let authCode = null;
 let lastError = null;
 let piContext = null;   // contexte du Property Inspector, s'il est ouvert
@@ -191,6 +195,7 @@ function resetAuth() {
   token = null;
   authCode = null;
   lastError = null;
+  authRetryAt = 0;   // le bouton doit relancer la demande immediatement
   dropRealtime();
   // On conserve hote/port/tranches, on n'oublie que le jeton.
   send({
@@ -235,7 +240,7 @@ function sendStatus() {
 
   send({
     event: 'sendToPropertyInspector',
-    action: 'eu.avonde.ytmdstrip.slice',
+    action: 'dev.74nu5.ytmdstrip.slice',
     context: piContext,
     payload: { status: status, level: level },
   });
@@ -293,8 +298,13 @@ function flushVolume() {
 
 // Demande de token. YTMD affiche un code que l'utilisateur doit approuver ;
 // /auth/request bloque jusqu'a l'approbation.
+//
+// Tant que l'utilisateur n'a pas coche "Enable companion authorization", le
+// serveur repond 403 : sans recul, on relancerait la demande a chaque tick et
+// YTMD finirait par nous rate-limiter (429). C'est le premier contact typique
+// d'un nouvel utilisateur, il doit rester silencieux cote serveur.
 async function requestToken() {
-  if (authInFlight) { return; }
+  if (authInFlight || Date.now() < authRetryAt) { return; }
   authInFlight = true;
   try {
     const r = await api('/api/v1/auth/requestcode', {
@@ -310,7 +320,9 @@ async function requestToken() {
         ? 'Active "Enable companion authorization" dans YTMD'
         : 'requestcode HTTP ' + r.status;
       authCode = null;
-      log(lastError);
+      authRetryAt = Date.now() + (r.status === 429 ? AUTH_RETRY_LIMITED_MS : AUTH_RETRY_MS);
+      log(lastError + ' — nouvelle tentative dans '
+        + Math.round((authRetryAt - Date.now()) / 1000) + 's');
       return;
     }
     const payload = await r.json();
@@ -327,6 +339,7 @@ async function requestToken() {
     if (!r2.ok) {
       lastError = 'approbation refusee ou expiree';
       authCode = null;
+      authRetryAt = Date.now() + AUTH_RETRY_MS;
       return;
     }
     const granted = await r2.json();
@@ -339,6 +352,7 @@ async function requestToken() {
     sendStatus();
   } catch (e) {
     lastError = 'YTMD injoignable';
+    authRetryAt = Date.now() + AUTH_RETRY_MS;
     log('auth KO: ' + e);
   } finally {
     authInFlight = false;
