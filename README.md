@@ -127,16 +127,18 @@ réalité du piège n° 3. `setInterval` suffirait probablement.
 
 ## Portabilité
 
-Le manifeste déclare **Windows uniquement**. Le code est du JavaScript pur, sans rien de
-spécifique à la plateforme : il devrait fonctionner tel quel sur macOS en ajoutant
+Le manifeste déclare **macOS 13+** et **Windows 10+**. Le code est du JavaScript pur,
+sans rien de spécifique à la plateforme : tout passe par le canvas, `fetch` et les
+WebSockets.
 
-```json
-{ "Platform": "mac", "MinimumVersion": "10.15" }
-```
+> ⚠️ **macOS n'a pas été testé.** La déclaration repose sur une revue du code, pas sur un
+> essai réel. Si tu rencontres un problème sur Mac, ouvre une issue — c'est exactement le
+> retour qui manque au projet.
 
-au tableau `OS`. Ce n'est pas déclaré parce que ça n'a **pas été testé** — mieux vaut un
-manifeste honnête qu'une compatibilité annoncée à l'aveugle. Retour d'expérience macOS
-bienvenu.
+Un seul écart réel a été identifié et corrigé : la pile de polices du canvas était
+`"Segoe UI", sans-serif`, or **Segoe UI n'existe pas sur macOS**. Le rendu y serait
+retombé sur la sans-serif générique. Elle est devenue
+`"Segoe UI", -apple-system, "Helvetica Neue", sans-serif`.
 
 ## Configuration
 

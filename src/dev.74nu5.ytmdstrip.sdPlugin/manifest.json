@@ -6,7 +6,7 @@
   "Category": "Full Strip for YTMD",
   "CategoryIcon": "icons/strip",
   "Description": "Shows the current YouTube Music Desktop track across the full width of the Stream Deck + touch strip: album art, title, artist and progress. Requires YouTube Music Desktop with its companion server enabled.",
-  "Version": "1.0.1.0",
+  "Version": "1.0.2.0",
   "Icon": "icons/plugin",
   "URL": "https://github.com/74nu5/ytmd-full-strip",
   "CodePath": "action.html",
@@ -14,6 +14,10 @@
     "MinimumVersion": "6.9"
   },
   "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "13"
+    },
     {
       "Platform": "windows",
       "MinimumVersion": "10"

@@ -632,11 +632,11 @@ function drawMessage(title, subtitle) {
   sctx.fillRect(0, 0, stripW, STRIP_H);
   sctx.textAlign = 'center';
   sctx.fillStyle = '#ffffff';
-  sctx.font = '600 30px "Segoe UI", sans-serif';
+  sctx.font = '600 30px "Segoe UI", -apple-system, "Helvetica Neue", sans-serif';
   sctx.fillText(title, stripW / 2, 46);
   if (subtitle) {
     sctx.fillStyle = '#9aa0b5';
-    sctx.font = '400 20px "Segoe UI", sans-serif';
+    sctx.font = '400 20px "Segoe UI", -apple-system, "Helvetica Neue", sans-serif';
     sctx.fillText(subtitle, stripW / 2, 76);
   }
   sctx.textAlign = 'left';
@@ -665,7 +665,7 @@ function drawNowPlaying(art, video, player) {
     sctx.fillStyle = '#242437';
     sctx.fillRect(0, 0, ART, ART);
     sctx.fillStyle = '#5b5b7a';
-    sctx.font = '400 46px "Segoe UI", sans-serif';
+    sctx.font = '400 46px "Segoe UI", -apple-system, "Helvetica Neue", sans-serif';
     sctx.textAlign = 'center';
     sctx.fillText('♪', ART / 2, 66);
     sctx.textAlign = 'left';
@@ -675,11 +675,11 @@ function drawNowPlaying(art, video, player) {
   const w = stripW - x - PAD;
 
   sctx.fillStyle = playing ? '#ffffff' : '#8e93a8';
-  sctx.font = '600 30px "Segoe UI", sans-serif';
+  sctx.font = '600 30px "Segoe UI", -apple-system, "Helvetica Neue", sans-serif';
   sctx.fillText(fitText(sctx, video.title || 'Nothing playing', w), x, 36);
 
   sctx.fillStyle = playing ? '#c3c7d8' : '#71768a';
-  sctx.font = '400 22px "Segoe UI", sans-serif';
+  sctx.font = '400 22px "Segoe UI", -apple-system, "Helvetica Neue", sans-serif';
   const artist = [video.author, video.album].filter(Boolean).join('  ·  ');
   sctx.fillText(fitText(sctx, artist, w - 90), x, 66);
 
@@ -689,7 +689,7 @@ function drawNowPlaying(art, video, player) {
   const ratio = duration > 0 ? Math.min(1, progress / duration) : 0;
 
   sctx.fillStyle = '#c3c7d8';
-  sctx.font = '400 17px "Segoe UI", sans-serif';
+  sctx.font = '400 17px "Segoe UI", -apple-system, "Helvetica Neue", sans-serif';
   sctx.textAlign = 'right';
   sctx.fillText(mmss(progress) + ' / ' + mmss(duration), stripW - PAD, 66);
   sctx.textAlign = 'left';
