@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Icone du plugin : le bandeau continu, traverse par une onde qui franchit
+       les quatre zones. C'est exactement ce que fait le plugin. -->
+  <rect width="256" height="256" rx="56" fill="#12121c"/>
+
+  <!-- Le bandeau -->
+  <rect x="20" y="84" width="216" height="88" rx="16" fill="#232336"/>
+
+  <!-- Les trois separations entre encodeurs, volontairement discretes -->
+  <g stroke="#ffffff" stroke-opacity="0.13" stroke-width="2">
+    <line x1="74" y1="88" x2="74" y2="168"/>
+    <line x1="128" y1="88" x2="128" y2="168"/>
+    <line x1="182" y1="88" x2="182" y2="168"/>
+  </g>
+
+  <!-- L'onde, continue d'un bout a l'autre : elle ignore les separations -->
+  <path d="M34 128 L58 104 L82 150 L106 112 L128 140 L152 100 L176 148 L200 116 L222 128"
+        fill="none" stroke="#ff2d55" stroke-width="10"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -74,14 +74,14 @@
 <body>
 
   <div class="row">
-    <label>État</label>
-    <div class="status"><span id="dot" class="dot"></span><span id="status">Connexion…</span></div>
+    <label>Status</label>
+    <div class="status"><span id="dot" class="dot"></span><span id="status">Connecting…</span></div>
   </div>
 
   <hr />
 
   <div class="row">
-    <label for="host">Hôte</label>
+    <label for="host">Host</label>
     <input id="host" type="text" placeholder="127.0.0.1" />
   </div>
 
@@ -89,26 +89,26 @@
     <label for="port">Port</label>
     <input id="port" type="number" min="1" max="65535" placeholder="9863" />
   </div>
-  <div class="hint">Serveur companion de YouTube Music Desktop.</div>
+  <div class="hint">YouTube Music Desktop companion server.</div>
 
   <div class="row">
-    <label for="slots">Encodeurs</label>
+    <label for="slots">Dials</label>
     <select id="slots">
-      <option value="4">4 — bandeau entier</option>
+      <option value="4">4 — full strip</option>
       <option value="3">3</option>
       <option value="2">2</option>
-      <option value="1">1 — un seul encodeur</option>
+      <option value="1">1 — single dial</option>
     </select>
   </div>
-  <div class="hint">L'image est découpée en autant de tranches. Pose l'action sur ce nombre d'encodeurs, en partant de la gauche.</div>
+  <div class="hint">The image is split into that many slices. Place the action on that many dials, starting from the left.</div>
 
   <hr />
 
   <div class="row">
     <label></label>
-    <button id="reset" class="danger" type="button">Réinitialiser l'autorisation</button>
+    <button id="reset" class="danger" type="button">Reset authorization</button>
   </div>
-  <div class="hint">Oublie le jeton et redemande un code, à approuver dans YTMD.</div>
+  <div class="hint">Forgets the stored token and requests a new code to approve in YTMD.</div>
 
 <script>
   let ws = null;
@@ -198,7 +198,7 @@
   $('port').addEventListener('blur', commit);
 
   $('reset').addEventListener('click', function () {
-    showStatus('Réinitialisation…', 'warn');
+    showStatus('Resetting…', 'warn');
     toPlugin({ cmd: 'reset-auth' });
   });
 </script>

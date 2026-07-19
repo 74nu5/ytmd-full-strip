@@ -44,7 +44,7 @@ Le découpage, lui, est bien réel :
 ## Prérequis
 
 - **Stream Deck +** (le bandeau tactile et les encodeurs sont indispensables)
-- Logiciel Stream Deck 6.4 ou plus
+- Logiciel Stream Deck **6.9** ou plus (exigé par le Marketplace, qui impose `SDKVersion 3`)
 - YouTube Music Desktop avec le **serveur companion activé**
 - Windows (voir « Portabilité » plus bas)
 
@@ -144,18 +144,21 @@ Le panneau de réglages (clic sur l'action dans le logiciel Stream Deck) expose 
 
 | Réglage | Défaut | Rôle |
 | --- | --- | --- |
-| **État** | — | Voyant de connexion : autorisé, temps réel actif, mode dégradé, erreur |
-| **Hôte** | `127.0.0.1` | Machine faisant tourner YTMD |
+| **Status** | — | Voyant de connexion : autorisé, temps réel actif, mode dégradé, erreur |
+| **Host** | `127.0.0.1` | Machine faisant tourner YTMD |
 | **Port** | `9863` | Port du serveur companion |
-| **Encodeurs** | `4` | Nombre de tranches — l'image est composée en `n × 200` px |
-| **Réinitialiser l'autorisation** | — | Oublie le jeton et redemande un code |
+| **Dials** | `4` | Nombre de tranches — l'image est composée en `n × 200` px |
+| **Reset authorization** | — | Oublie le jeton et redemande un code |
 
 Les réglages sont **globaux** : ils valent pour tous les encodeurs à la fois, pas besoin
 de les répéter quatre fois.
 
-Le réglage **Encodeurs** permet de n'occuper que 1, 2 ou 3 dials si tu veux garder les
+Le réglage **Dials** permet de n'occuper que 1, 2 ou 3 encodeurs si tu veux garder les
 autres pour autre chose : l'image est alors composée à la largeur correspondante au lieu
 d'être tronquée. Pose l'action sur ce nombre d'encodeurs, en partant de la gauche.
+
+> L'interface du plugin (panneau de réglages, messages du bandeau, journaux) est en
+> **anglais**, le Marketplace étant international. Cette documentation reste en français.
 
 ## Limites connues
 

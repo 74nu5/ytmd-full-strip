@@ -62,6 +62,23 @@ function persistSettings(extra) {
 }
 
 const dials = new Map();       // context -> colonne 0..3
+
+// Les guidelines du Marketplace demandent d'avertir l'utilisateur des echecs
+// via showAlert. On ne le declenche que sur un changement d'erreur : sinon la
+// boucle de reessai ferait clignoter l'alerte indefiniment.
+function alertDials() {
+  dials.forEach(function (column, context) {
+    send({ event: 'showAlert', context: context });
+  });
+}
+
+function setError(message) {
+  if (message && message !== lastError) {
+    alertDials();
+  }
+  lastError = message;
+}
+
 const artCache = new Map();    // url -> ImageBitmap | HTMLImageElement
 const artFailed = new Map();   // url -> horodatage du dernier echec (retry differé)
 const artInflight = new Set(); // url en cours de chargement
@@ -99,7 +116,7 @@ function connectElgatoStreamDeckSocket(inPort, inUUID, inRegisterEvent, inInfo) 
   ws.onopen = function () {
     send({ event: inRegisterEvent, uuid: inUUID });
     send({ event: 'getGlobalSettings', context: inUUID });
-    log('enregistre');
+    log('registered');
     startMetronome();
   };
 
@@ -176,25 +193,25 @@ function applySettings(settings) {
     slots = wanted;
     stripW = slots * SLOT_W;
     strip.width = stripW;          // redimensionner remet la toile a zero
-    log('composition sur ' + slots + ' tranche(s), soit ' + stripW + 'px');
+    log('composing across ' + slots + ' slice(s), ' + stripW + 'px wide');
   }
 
   if (host + ':' + port !== previousEndpoint) {
-    log('cible changee -> ' + baseUrl());
+    log('target changed -> ' + baseUrl());
     dropRealtime();
   }
 
-  if (token && !wasToken) { log('token restaure depuis les global settings'); }
+  if (token && !wasToken) { log('token restored from global settings'); }
 
   lastPaintKey = '';
   sendStatus();
 }
 
 function resetAuth() {
-  log('reinitialisation de l\'autorisation demandee');
+  log('authorization reset requested');
   token = null;
   authCode = null;
-  lastError = null;
+  setError(null);
   authRetryAt = 0;   // le bouton doit relancer la demande immediatement
   dropRealtime();
   // On conserve hote/port/tranches, on n'oublie que le jeton.
@@ -222,19 +239,19 @@ function sendStatus() {
   let status;
   let level;
   if (!token && authCode) {
-    status = 'Code ' + authCode + ' — à approuver dans YTMD';
+    status = 'Code ' + authCode + ' — approve it in YTMD';
     level = 'warn';
   } else if (!token) {
-    status = 'Pas encore autorisé';
+    status = 'Not authorized yet';
     level = 'warn';
   } else if (lastError) {
     status = lastError;
     level = 'err';
   } else if (rtReady) {
-    status = 'Connecté — temps réel actif';
+    status = 'Connected — real-time active';
     level = 'ok';
   } else {
-    status = 'Connecté — mode dégradé (polling)';
+    status = 'Connected — degraded (polling)';
     level = 'warn';
   }
 
@@ -267,7 +284,8 @@ async function command(name, data) {
     const body = data === undefined ? { command: name } : { command: name, data: data };
     await api('/api/v1/command', { method: 'POST', body: JSON.stringify(body) });
   } catch (e) {
-    log('commande ' + name + ' KO: ' + e);
+    alertDials();
+    log('command ' + name + ' failed: ' + e);
   }
 }
 
@@ -316,19 +334,19 @@ async function requestToken() {
       }),
     });
     if (!r.ok) {
-      lastError = r.status === 403
-        ? 'Active "Enable companion authorization" dans YTMD'
-        : 'requestcode HTTP ' + r.status;
+      setError(r.status === 403
+        ? 'Enable "companion authorization" in YTMD'
+        : 'requestcode HTTP ' + r.status);
       authCode = null;
       authRetryAt = Date.now() + (r.status === 429 ? AUTH_RETRY_LIMITED_MS : AUTH_RETRY_MS);
-      log(lastError + ' — nouvelle tentative dans '
+      log(lastError + ' — retrying in '
         + Math.round((authRetryAt - Date.now()) / 1000) + 's');
       return;
     }
     const payload = await r.json();
     authCode = payload.code;
-    lastError = null;
-    log('code a approuver: ' + authCode);
+    setError(null);
+    log('code to approve: ' + authCode);
     paint();   // affiche le code sur le bandeau
     sendStatus();
 
@@ -337,7 +355,7 @@ async function requestToken() {
       body: JSON.stringify({ appId: YTMD.appId, code: authCode }),
     });
     if (!r2.ok) {
-      lastError = 'approbation refusee ou expiree';
+      setError('Authorization declined or expired');
       authCode = null;
       authRetryAt = Date.now() + AUTH_RETRY_MS;
       return;
@@ -345,15 +363,15 @@ async function requestToken() {
     const granted = await r2.json();
     token = granted.token;
     authCode = null;
-    lastError = null;
+    setError(null);
     // Le token vit dans les global settings de Stream Deck, pas en clair sur disque.
     persistSettings({ token: token });
-    log('token obtenu et enregistre');
+    log('token granted and stored');
     sendStatus();
   } catch (e) {
-    lastError = 'YTMD injoignable';
+    setError('YTMD unreachable');
     authRetryAt = Date.now() + AUTH_RETRY_MS;
-    log('auth KO: ' + e);
+    log('auth failed: ' + e);
   } finally {
     authInFlight = false;
   }
@@ -386,7 +404,7 @@ function ensureRealtime() {
   try {
     rt = new WebSocket('ws://' + host + ':' + port + '/socket.io/?EIO=4&transport=websocket');
   } catch (e) {
-    log('realtime: ouverture KO (' + e.message + ')');
+    log('realtime: could not open socket (' + e.message + ')');
     scheduleRealtimeRetry();
     return;
   }
@@ -404,13 +422,13 @@ function ensureRealtime() {
 
     if (data.indexOf('40' + RT_NAMESPACE) === 0) {
       rtReady = true;
-      log('realtime: connecte, push actif');
+      log('realtime: connected, push active');
       sendStatus();
       return;
     }
 
     if (data.indexOf('44') === 0) {
-      log('realtime: namespace refuse -> ' + data.slice(2, 200));
+      log('realtime: namespace refused -> ' + data.slice(2, 200));
       rtReady = false;
       return;
     }
@@ -427,7 +445,7 @@ function ensureRealtime() {
         if (pendingVolume === null && state.player && typeof state.player.volume === 'number') {
           volume = state.player.volume;
         }
-        lastError = null;
+        setError(null);
 
         rtEvents += 1;
         if (rtEvents === 1) { rtFirstAt = Date.now(); }
@@ -473,10 +491,10 @@ function startMetronome() {
     const url = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
     const worker = new Worker(url);
     worker.onmessage = function () { tick(); };
-    log('metronome: Worker actif');
+    log('metronome: Worker active');
   } catch (e) {
     setInterval(tick, POLL_MS);
-    log('metronome: Worker refuse (' + e.message + '), repli sur setInterval bride');
+    log('metronome: Worker refused (' + e.message + '), falling back to setInterval');
   }
 }
 
@@ -496,7 +514,7 @@ async function tick() {
   // ne sert plus que de filet si la socket tombe.
   if (rtReady) {
     ticks += 1;
-    if (ticks % 600 === 0) { log('battement: push actif, dials=' + dials.size); }
+    if (ticks % 600 === 0) { log('heartbeat: push active, dials=' + dials.size); }
     return;
   }
 
@@ -513,17 +531,17 @@ async function tick() {
     }
     if (r.status === 429) {
       pollBackoffUntil = Date.now() + 20000;
-      log('429 : YTMD limite le debit, pause de 20s du polling');
+      log('429: YTMD is rate limiting, pausing polling for 20s');
       return;   // on garde l'affichage courant plutot que d'afficher une erreur
     }
-    if (!r.ok) { lastError = 'state HTTP ' + r.status; paint(); return; }
+    if (!r.ok) { setError('state HTTP ' + r.status); paint(); return; }
     state = await r.json();
     if (state && state.player && typeof state.player.volume === 'number') {
       volume = state.player.volume;
     }
-    lastError = null;
+    setError(null);
   } catch (e) {
-    lastError = 'YTMD hors ligne';
+    setError('YTMD offline');
     state = null;
   }
 
@@ -532,7 +550,7 @@ async function tick() {
   // On n'arrive ici que si le push est tombe : le signaler, sans spammer.
   ticks += 1;
   if (ticks % 12 === 0) {
-    log('mode degrade : push indisponible, polling bride (dials=' + dials.size + ')');
+    log('degraded: push unavailable, falling back to polling (dials=' + dials.size + ')');
   }
 
   paint();
@@ -551,9 +569,9 @@ async function fetchArt(url) {
     if (r.ok) {
       return await createImageBitmap(await r.blob());
     }
-    log('pochette: HTTP ' + r.status);
+    log('album art: HTTP ' + r.status);
   } catch (e) {
-    log('pochette: fetch refuse (' + e.message + '), repli sur <img>');
+    log('album art: fetch refused (' + e.message + '), falling back to <img>');
   }
   try {
     return await new Promise(function (resolve, reject) {
@@ -564,7 +582,7 @@ async function fetchArt(url) {
       img.src = url;
     });
   } catch (e) {
-    log('pochette: repli <img> KO aussi (' + e.message + ')');
+    log('album art: <img> fallback failed too (' + e.message + ')');
   }
   return null;
 }
@@ -586,7 +604,7 @@ function getArt(url) {
     if (img) {
       artCache.set(url, img);
       artFailed.delete(url);
-      log('pochette chargee (' + img.width + 'x' + img.height + ')');
+      log('album art loaded (' + img.width + 'x' + img.height + ')');
     } else {
       artFailed.set(url, Date.now());
     }
@@ -662,7 +680,7 @@ function drawNowPlaying(art, video, player) {
 
   sctx.fillStyle = playing ? '#ffffff' : '#8e93a8';
   sctx.font = '600 30px "Segoe UI", sans-serif';
-  sctx.fillText(fitText(sctx, video.title || 'Rien en lecture', w), x, 36);
+  sctx.fillText(fitText(sctx, video.title || 'Nothing playing', w), x, 36);
 
   sctx.fillStyle = playing ? '#c3c7d8' : '#71768a';
   sctx.font = '400 22px "Segoe UI", sans-serif';
@@ -719,13 +737,13 @@ function paint() {
   lastPaintKey = key;
 
   if (!token && authCode) {
-    drawMessage('Code ' + authCode, 'Approuve la demande dans YouTube Music Desktop');
+    drawMessage('Code ' + authCode, 'Approve the request in YouTube Music Desktop');
   } else if (lastError) {
     drawMessage('YTMD', lastError);
   } else if (video && player) {
     drawNowPlaying(art, video, player);
   } else {
-    drawMessage('Rien en lecture', null);
+    drawMessage('Nothing playing', null);
   }
 
   pushSlices();
@@ -746,6 +764,6 @@ function pushSlices() {
   } catch (e) {
     // Typiquement SecurityError si le canvas a ete teinte par une image
     // cross-origin : sans ce garde, l'echec serait totalement silencieux.
-    log('pushSlices KO: ' + e.name + ' ' + e.message);
+    log('pushSlices failed: ' + e.name + ' ' + e.message);
   }
 }
