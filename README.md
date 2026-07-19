@@ -12,12 +12,22 @@ sans couture visible.
 
 C'est tout ce que fait ce plugin.
 
+![Le bandeau d'un Stream Deck + affichant la pochette, le titre, l'artiste et la progression](docs/strip-device.jpg)
+
+Sur le matériel, aucune couture n'est visible entre les quatre zones — c'est tout l'enjeu
+du découpage.
+
+![Le même rendu dans l'aperçu du logiciel Stream Deck, avec les quatre encodeurs](docs/strip-software.png)
+
+Le découpage, lui, est bien réel :
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ ▓▓▓▓▓  Don't Stay                                               │
-│ ▓▓▓▓▓  Linkin Park · Meteora                        0:29 / 3:08 │
+│ ▓▓▓▓▓  Cut the Bridge                                           │
+│ ▓▓▓▓▓  Linkin Park · From Zero                      0:49 / 3:49 │
 │ ▓▓▓▓▓  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 └──dial 1───────┴──dial 2───────┴──dial 3───────┴──dial 4────────┘
+     0-200px         200-400px       400-600px       600-800px
 ```
 
 ## Fonctionnalités
