@@ -1,0 +1,14 @@
+# Paquet genere par le CLI Elgato
+*.streamDeckPlugin
+dist/
+
+# Systeme
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editeurs
+.vs/
+.idea/
+.vscode/
+*.swp

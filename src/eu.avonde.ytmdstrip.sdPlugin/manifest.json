@@ -1,0 +1,45 @@
+{
+  "SDKVersion": 2,
+  "Author": "Romain Avonde",
+  "Name": "Full Strip for YTMD",
+  "Description": "Affiche la pochette et le titre en cours sur toute la largeur du bandeau du Stream Deck +. Necessite YouTube Music Desktop et son serveur companion.",
+  "Version": "1.0.0",
+  "Icon": "icons/plugin",
+  "URL": "https://github.com/RomainAvonde/ytmd-full-strip",
+  "CodePath": "action.html",
+  "Software": {
+    "MinimumVersion": "6.4"
+  },
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Actions": [
+    {
+      "Icon": "icons/action",
+      "Name": "Full Strip",
+      "UUID": "eu.avonde.ytmdstrip.slice",
+      "Controllers": [
+        "Encoder"
+      ],
+      "Encoder": {
+        "layout": "layouts/fullbleed.json",
+        "TriggerDescription": {
+          "Rotate": "Volume",
+          "Push": "Lecture / Pause",
+          "Touch": "Lecture / Pause",
+          "LongTouch": "Piste suivante"
+        }
+      },
+      "States": [
+        {
+          "Image": "icons/action"
+        }
+      ],
+      "SupportedInMultiActions": false,
+      "Tooltip": "Une tranche du bandeau 800x100. A poser sur les 4 encodeurs."
+    }
+  ]
+}

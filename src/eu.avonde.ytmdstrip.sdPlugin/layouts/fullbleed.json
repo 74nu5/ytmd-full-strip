@@ -1,0 +1,12 @@
+{
+  "id": "eu.avonde.ytmdstrip.fullbleed",
+  "items": [
+    {
+      "key": "canvas",
+      "type": "pixmap",
+      "rect": [0, 0, 200, 100],
+      "enabled": true,
+      "zOrder": 0
+    }
+  ]
+}

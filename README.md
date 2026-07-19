@@ -1,0 +1,145 @@
+# Full Strip for YTMD
+
+Un plugin Stream Deck + qui utilise **toute la largeur du bandeau tactile** pour
+afficher ce que joue [YouTube Music Desktop](https://github.com/ytmdesktop/ytmdesktop) :
+pochette, titre, artiste, album, progression.
+
+Le bandeau du Stream Deck + n'est pas quatre petits écrans, c'est **un seul écran de
+800 × 100 px** découpé en quatre zones de 200 × 100. Le SDK ne laisse un plugin peindre
+que sa propre zone — mais rien n'empêche de composer une image de 800 × 100, de la
+découper en quatre et d'en pousser une tranche par encodeur. Les tranches se raboutent
+sans couture visible.
+
+C'est tout ce que fait ce plugin.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ ▓▓▓▓▓  Don't Stay                                               │
+│ ▓▓▓▓▓  Linkin Park · Meteora                        0:29 / 3:08 │
+│ ▓▓▓▓▓  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+└──dial 1───────┴──dial 2───────┴──dial 3───────┴──dial 4────────┘
+```
+
+## Fonctionnalités
+
+- Pochette de l'album à gauche, en 100 × 100 net, plus la même pochette floutée et
+  assombrie en fond sur toute la largeur
+- Titre, artiste et album, tronqués proprement s'ils débordent
+- Barre de progression et minutage, rafraîchis à la seconde
+- Affichage grisé avec indicateur ⏸ en pause
+- **Rotation** = volume · **appui ou tap** = lecture/pause
+- Mises à jour par **push** (~270 ms), pas de polling en régime nominal
+
+## Prérequis
+
+- **Stream Deck +** (le bandeau tactile et les encodeurs sont indispensables)
+- Logiciel Stream Deck 6.4 ou plus
+- YouTube Music Desktop avec le **serveur companion activé**
+- Windows (voir « Portabilité » plus bas)
+
+## Installation
+
+1. Copier `src/eu.avonde.ytmdstrip.sdPlugin` dans
+   `%APPDATA%\Elgato\StreamDeck\Plugins\`
+2. Redémarrer le logiciel Stream Deck
+3. Dans YTMD : **Settings → Integrations**, activer *Companion Server* **et**
+   *Enable companion authorization*
+4. Poser l'action **Full Strip** sur les **quatre** encodeurs
+5. Le bandeau affiche un code à quatre chiffres — l'approuver dans YTMD
+
+L'autorisation n'est demandée qu'une fois : le jeton est ensuite conservé dans les
+*global settings* de Stream Deck.
+
+> ⚠️ L'action doit être posée sur les quatre encodeurs. Avec seulement deux ou trois,
+> chaque dial affiche bien sa tranche, mais il manque le reste de l'image.
+
+## Ce que le plugin attend de YTMD
+
+L'API companion, telle qu'exposée par YTMD sur `http://127.0.0.1:9863` :
+
+| Endpoint | Usage |
+| --- | --- |
+| `/metadata` | versions disponibles — **non** préfixé par `/api/v1` |
+| `/api/v1/auth/requestcode` | `POST {appId, appName, appVersion}` → `{code}` |
+| `/api/v1/auth/request` | `POST {appId, code}` → `{token}` (bloque jusqu'à approbation) |
+| `/api/v1/state` | état courant (repli seulement) |
+| `/api/v1/command` | `POST {command, data}` |
+| `/api/v1/realtime` | namespace socket.io, événement `state-update` |
+
+## Pièges rencontrés
+
+Ces quatre points ont coûté l'essentiel de la mise au point. Ils sont documentés ici
+pour la personne suivante.
+
+**1. `requestcode` renvoie 403 sans explication.**
+C'est volontaire : YTMD refuse d'émettre des jetons tant que *Enable companion
+authorization* n'est pas coché. Ce réglage se redésactive tout seul au bout d'un
+moment ; il suffit qu'il soit actif au moment de la demande.
+
+**2. Le `GET /state` est mis en cache par le navigateur.**
+La page d'un plugin Stream Deck est une page Chromium, et un `fetch` en boucle sur la
+même URL ressert la première réponse indéfiniment. L'affichage se fige alors sur le
+premier échantillon, sans la moindre erreur nulle part. `cache: 'no-store'` est
+obligatoire.
+
+**3. Un `setVolume` par cran de molette déclenche un HTTP 429 en cascade.**
+YTMD limite le débit. Une rotation un peu vive génère des dizaines de POST, le serveur
+répond 429 — et refuse ensuite **aussi la socket temps réel**. Le plugin retombe alors
+sur le polling, qui se prend un 429 à son tour. Le symptôme visible (« l'affichage n'est
+plus temps réel ») est très éloigné de la cause. Les commandes de volume sont donc
+coalescées à une toutes les 200 ms, la dernière valeur étant poussée au relâchement.
+
+**4. L'en-tête d'authentification est le jeton brut.**
+`Authorization: <token>`, sans `Bearer`.
+
+## Notes d'implémentation
+
+**Pas de dépendance socket.io.** Le protocole Engine.IO v4 est parlé directement sur une
+WebSocket brute, en une soixantaine de lignes : `0{…}` ouverture, `40<ns>,<authJSON>`
+connexion au namespace, `42<ns>,[event,data]` événement, `2`/`3` ping/pong. Embarquer
+40 Ko de bibliothèque pour ça n'en valait pas la peine.
+
+**Le canvas doit rester « propre ».** Les pochettes sont chargées en
+`fetch → blob → ImageBitmap`, avec repli sur `<img crossOrigin="anonymous">`. Un simple
+`<img>` distant teinterait le canvas et `toDataURL()` lèverait une `SecurityError` —
+échec parfaitement silencieux, puisqu'il survient au moment de pousser les pixels.
+
+**Le repaint est cadencé, pas le push.** Les événements arrivent ~3,7 fois par seconde,
+mais l'image n'est recomposée que lorsque la seconde entière change, ou que le titre,
+l'état de lecture ou la pochette changent. Inutile de pousser quatre PNG quatre fois par
+seconde pour un affichage identique.
+
+**Le métronome Worker est défensif.** Les timers des pages en arrière-plan *peuvent*
+être bridés par Chromium ; ceux d'un Worker y échappent. Cela dit, le bridage n'a pas
+été prouvé sur ce moteur — les ~5 s observées pendant la mise au point venaient en
+réalité du piège n° 3. `setInterval` suffirait probablement.
+
+## Portabilité
+
+Le manifeste déclare **Windows uniquement**. Le code est du JavaScript pur, sans rien de
+spécifique à la plateforme : il devrait fonctionner tel quel sur macOS en ajoutant
+
+```json
+{ "Platform": "mac", "MinimumVersion": "10.15" }
+```
+
+au tableau `OS`. Ce n'est pas déclaré parce que ça n'a **pas été testé** — mieux vaut un
+manifeste honnête qu'une compatibilité annoncée à l'aveugle. Retour d'expérience macOS
+bienvenu.
+
+## Limites connues
+
+- Les titres trop longs sont tronqués (pas de défilement) — le défilement imposerait un
+  repaint continu des quatre dials
+- Pas de *Property Inspector* : hôte et port sont en dur sur `127.0.0.1:9863`, et il n'y
+  a pas de bouton pour réinitialiser le jeton
+- Le volume n'est pas affiché sur le bandeau pendant la rotation
+- Il faut occuper les quatre encodeurs
+
+## Licence
+
+MIT — voir [LICENSE](LICENSE).
+
+Ce projet n'est ni affilié à Elgato, ni à YouTube Music Desktop, ni à Google. « YouTube »
+et « YouTube Music » sont des marques de Google LLC ; elles ne sont mentionnées ici qu'à
+titre descriptif.
