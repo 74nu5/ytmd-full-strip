@@ -21,6 +21,7 @@
       "Icon": "icons/action",
       "Name": "Full Strip",
       "UUID": "eu.avonde.ytmdstrip.slice",
+      "PropertyInspectorPath": "pi.html",
       "Controllers": [
         "Encoder"
       ],

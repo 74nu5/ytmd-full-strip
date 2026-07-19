@@ -8,15 +8,29 @@
 // ---------------------------------------------------------------------------
 
 const YTMD = {
-  base: 'http://127.0.0.1:9863',
   appId: 'sdplusfullstrip',
   appName: 'SD+ Full Strip',
   appVersion: '1.0.0',
 };
 
-const STRIP_W = 800;
+const DEFAULT_HOST = '127.0.0.1';
+const DEFAULT_PORT = 9863;
+const DEFAULT_SLOTS = 4;
+
+// Reglages pilotes par le Property Inspector (global settings).
+let host = DEFAULT_HOST;
+let port = DEFAULT_PORT;
+let slots = DEFAULT_SLOTS;
+
 const STRIP_H = 100;
 const SLOT_W = 200;
+
+// Largeur de composition : autant de tranches de 200px que d'encodeurs occupes.
+let stripW = DEFAULT_SLOTS * SLOT_W;
+
+function baseUrl() {
+  return 'http://' + host + ':' + port;
+}
 const ART = 100;          // pochette carree, calee dans le slot 0
 const PAD = 12;           // marge entre pochette et texte
 const POLL_MS = 1000;
@@ -31,6 +45,17 @@ let token = null;
 let authInFlight = false;
 let authCode = null;
 let lastError = null;
+let piContext = null;   // contexte du Property Inspector, s'il est ouvert
+
+// Les global settings portent aussi hote/port/tranches : ne jamais les ecraser
+// en n'ecrivant que le jeton.
+function persistSettings(extra) {
+  send({
+    event: 'setGlobalSettings',
+    context: pluginUUID,
+    payload: Object.assign({ host: host, port: port, slots: slots }, extra || {}),
+  });
+}
 
 const dials = new Map();       // context -> colonne 0..3
 const artCache = new Map();    // url -> ImageBitmap | HTMLImageElement
@@ -84,12 +109,23 @@ window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
 
 function handleEvent(msg) {
   switch (msg.event) {
-    case 'didReceiveGlobalSettings': {
-      const settings = (msg.payload && msg.payload.settings) || {};
-      if (settings.token) {
-        token = settings.token;
-        log('token restaure depuis les global settings');
-      }
+    case 'didReceiveGlobalSettings':
+      applySettings((msg.payload && msg.payload.settings) || {});
+      break;
+
+    case 'propertyInspectorDidAppear':
+      piContext = msg.context;
+      sendStatus();
+      break;
+
+    case 'propertyInspectorDidDisappear':
+      piContext = null;
+      break;
+
+    case 'sendToPlugin': {
+      const payload = msg.payload || {};
+      if (payload.cmd === 'reset-auth') { resetAuth(); }
+      if (payload.cmd === 'get-status') { sendStatus(); }
       break;
     }
     case 'willAppear': {
@@ -117,6 +153,95 @@ function handleEvent(msg) {
 }
 
 // ---------------------------------------------------------------------------
+// Reglages (Property Inspector)
+// ---------------------------------------------------------------------------
+
+// Les reglages sont globaux : ils valent pour les quatre dials a la fois.
+// Un changement d'hote ou de port impose de rouvrir la socket temps reel ;
+// un changement du nombre de tranches impose de redimensionner la toile.
+function applySettings(settings) {
+  const wasToken = token;
+  const previousEndpoint = host + ':' + port;
+
+  token = settings.token || null;
+  host = settings.host || DEFAULT_HOST;
+  port = settings.port || DEFAULT_PORT;
+
+  const wanted = Math.max(1, Math.min(4, settings.slots || DEFAULT_SLOTS));
+  if (wanted !== slots) {
+    slots = wanted;
+    stripW = slots * SLOT_W;
+    strip.width = stripW;          // redimensionner remet la toile a zero
+    log('composition sur ' + slots + ' tranche(s), soit ' + stripW + 'px');
+  }
+
+  if (host + ':' + port !== previousEndpoint) {
+    log('cible changee -> ' + baseUrl());
+    dropRealtime();
+  }
+
+  if (token && !wasToken) { log('token restaure depuis les global settings'); }
+
+  lastPaintKey = '';
+  sendStatus();
+}
+
+function resetAuth() {
+  log('reinitialisation de l\'autorisation demandee');
+  token = null;
+  authCode = null;
+  lastError = null;
+  dropRealtime();
+  // On conserve hote/port/tranches, on n'oublie que le jeton.
+  send({
+    event: 'setGlobalSettings',
+    context: pluginUUID,
+    payload: { host: host, port: port, slots: slots },
+  });
+  lastPaintKey = '';
+  sendStatus();
+}
+
+function dropRealtime() {
+  rtReady = false;
+  if (rt) {
+    try { rt.close(); } catch (e) { /* deja fermee */ }
+    rt = null;
+  }
+  rtRetryAt = 0;
+}
+
+function sendStatus() {
+  if (!piContext) { return; }
+
+  let status;
+  let level;
+  if (!token && authCode) {
+    status = 'Code ' + authCode + ' — à approuver dans YTMD';
+    level = 'warn';
+  } else if (!token) {
+    status = 'Pas encore autorisé';
+    level = 'warn';
+  } else if (lastError) {
+    status = lastError;
+    level = 'err';
+  } else if (rtReady) {
+    status = 'Connecté — temps réel actif';
+    level = 'ok';
+  } else {
+    status = 'Connecté — mode dégradé (polling)';
+    level = 'warn';
+  }
+
+  send({
+    event: 'sendToPropertyInspector',
+    action: 'eu.avonde.ytmdstrip.slice',
+    context: piContext,
+    payload: { status: status, level: level },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // API YTMD
 // ---------------------------------------------------------------------------
 
@@ -128,7 +253,7 @@ async function api(path, options) {
   if (token) {
     opts.headers['Authorization'] = token;
   }
-  return fetch(YTMD.base + path, opts);
+  return fetch(baseUrl() + path, opts);
 }
 
 async function command(name, data) {
@@ -193,6 +318,7 @@ async function requestToken() {
     lastError = null;
     log('code a approuver: ' + authCode);
     paint();   // affiche le code sur le bandeau
+    sendStatus();
 
     const r2 = await api('/api/v1/auth/request', {
       method: 'POST',
@@ -208,8 +334,9 @@ async function requestToken() {
     authCode = null;
     lastError = null;
     // Le token vit dans les global settings de Stream Deck, pas en clair sur disque.
-    send({ event: 'setGlobalSettings', context: pluginUUID, payload: { token: token } });
+    persistSettings({ token: token });
     log('token obtenu et enregistre');
+    sendStatus();
   } catch (e) {
     lastError = 'YTMD injoignable';
     log('auth KO: ' + e);
@@ -243,7 +370,7 @@ function ensureRealtime() {
   if (!token || rt || Date.now() < rtRetryAt) { return; }
 
   try {
-    rt = new WebSocket('ws://127.0.0.1:9863/socket.io/?EIO=4&transport=websocket');
+    rt = new WebSocket('ws://' + host + ':' + port + '/socket.io/?EIO=4&transport=websocket');
   } catch (e) {
     log('realtime: ouverture KO (' + e.message + ')');
     scheduleRealtimeRetry();
@@ -264,6 +391,7 @@ function ensureRealtime() {
     if (data.indexOf('40' + RT_NAMESPACE) === 0) {
       rtReady = true;
       log('realtime: connecte, push actif');
+      sendStatus();
       return;
     }
 
@@ -305,6 +433,7 @@ function ensureRealtime() {
     rtReady = false;
     rt = null;
     scheduleRealtimeRetry();
+    sendStatus();
   };
 
   rt.onerror = function () { /* onclose suit toujours : on y gere la reprise */ };
@@ -364,7 +493,8 @@ async function tick() {
     const r = await api('/api/v1/state');
     if (r.status === 401) {
       token = null;                       // token revoque -> on repart en auth
-      send({ event: 'setGlobalSettings', context: pluginUUID, payload: {} });
+      persistSettings();
+      sendStatus();
       return;
     }
     if (r.status === 429) {
@@ -471,15 +601,15 @@ function mmss(seconds) {
 
 function drawMessage(title, subtitle) {
   sctx.fillStyle = '#0d0d16';
-  sctx.fillRect(0, 0, STRIP_W, STRIP_H);
+  sctx.fillRect(0, 0, stripW, STRIP_H);
   sctx.textAlign = 'center';
   sctx.fillStyle = '#ffffff';
   sctx.font = '600 30px "Segoe UI", sans-serif';
-  sctx.fillText(title, STRIP_W / 2, 46);
+  sctx.fillText(title, stripW / 2, 46);
   if (subtitle) {
     sctx.fillStyle = '#9aa0b5';
     sctx.font = '400 20px "Segoe UI", sans-serif';
-    sctx.fillText(subtitle, STRIP_W / 2, 76);
+    sctx.fillText(subtitle, stripW / 2, 76);
   }
   sctx.textAlign = 'left';
 }
@@ -489,15 +619,15 @@ function drawNowPlaying(art, video, player) {
 
   // Fond : la pochette floutee et assombrie, etiree sur tout le bandeau.
   sctx.fillStyle = '#0d0d16';
-  sctx.fillRect(0, 0, STRIP_W, STRIP_H);
+  sctx.fillRect(0, 0, stripW, STRIP_H);
   if (art) {
     sctx.save();
     sctx.filter = 'blur(18px)';
     sctx.globalAlpha = 0.55;
-    sctx.drawImage(art, 0, -STRIP_W / 4, STRIP_W, STRIP_W / 2);
+    sctx.drawImage(art, 0, -stripW / 4, stripW, stripW / 2);
     sctx.restore();
     sctx.fillStyle = 'rgba(8, 8, 18, 0.62)';
-    sctx.fillRect(0, 0, STRIP_W, STRIP_H);
+    sctx.fillRect(0, 0, stripW, STRIP_H);
   }
 
   // Pochette nette, calee a gauche (entierement dans le slot 0).
@@ -514,7 +644,7 @@ function drawNowPlaying(art, video, player) {
   }
 
   const x = ART + PAD;
-  const w = STRIP_W - x - PAD;
+  const w = stripW - x - PAD;
 
   sctx.fillStyle = playing ? '#ffffff' : '#8e93a8';
   sctx.font = '600 30px "Segoe UI", sans-serif';
@@ -533,7 +663,7 @@ function drawNowPlaying(art, video, player) {
   sctx.fillStyle = '#c3c7d8';
   sctx.font = '400 17px "Segoe UI", sans-serif';
   sctx.textAlign = 'right';
-  sctx.fillText(mmss(progress) + ' / ' + mmss(duration), STRIP_W - PAD, 66);
+  sctx.fillText(mmss(progress) + ' / ' + mmss(duration), stripW - PAD, 66);
   sctx.textAlign = 'left';
 
   const barY = 84;
@@ -544,8 +674,8 @@ function drawNowPlaying(art, video, player) {
 
   if (!playing) {
     sctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    sctx.fillRect(STRIP_W - 30, 12, 5, 18);
-    sctx.fillRect(STRIP_W - 21, 12, 5, 18);
+    sctx.fillRect(stripW - 30, 12, 5, 18);
+    sctx.fillRect(stripW - 21, 12, 5, 18);
   }
 }
 
@@ -590,7 +720,7 @@ function paint() {
 function pushSlices() {
   try {
     dials.forEach(function (column, context) {
-      const col = ((column % 4) + 4) % 4;
+      const col = ((column % slots) + slots) % slots;
       slotCtx.clearRect(0, 0, SLOT_W, STRIP_H);
       slotCtx.drawImage(strip, col * SLOT_W, 0, SLOT_W, STRIP_H, 0, 0, SLOT_W, STRIP_H);
       send({

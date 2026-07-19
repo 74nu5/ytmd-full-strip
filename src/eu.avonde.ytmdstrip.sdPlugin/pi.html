@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Full Strip for YTMD</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #2d2d2d;
+      --field: #3d3d3d;
+      --border: #4a4a4a;
+      --text: #d8d8d8;
+      --muted: #969696;
+      --accent: #77f;
+    }
+    body {
+      margin: 0;
+      padding: 12px;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .row > label {
+      flex: 0 0 92px;
+      text-align: right;
+      color: var(--muted);
+    }
+    input, select, button {
+      background: var(--field);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 4px 6px;
+      font: inherit;
+    }
+    input, select { flex: 1 1 auto; min-width: 0; }
+    input[type="number"] { flex: 0 0 76px; }
+    button {
+      cursor: pointer;
+      flex: 1 1 auto;
+    }
+    button:hover { background: #4a4a4a; }
+    button.danger:hover { background: #6b3030; border-color: #8b4040; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex: 1 1 auto;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex: 0 0 auto;
+    }
+    .dot.ok { background: #3ec46d; }
+    .dot.warn { background: #e6b026; }
+    .dot.err { background: #e05252; }
+    .hint {
+      color: var(--muted);
+      font-size: 11px;
+      margin: -4px 0 12px 100px;
+    }
+    hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+  </style>
+</head>
+<body>
+
+  <div class="row">
+    <label>État</label>
+    <div class="status"><span id="dot" class="dot"></span><span id="status">Connexion…</span></div>
+  </div>
+
+  <hr />
+
+  <div class="row">
+    <label for="host">Hôte</label>
+    <input id="host" type="text" placeholder="127.0.0.1" />
+  </div>
+
+  <div class="row">
+    <label for="port">Port</label>
+    <input id="port" type="number" min="1" max="65535" placeholder="9863" />
+  </div>
+  <div class="hint">Serveur companion de YouTube Music Desktop.</div>
+
+  <div class="row">
+    <label for="slots">Encodeurs</label>
+    <select id="slots">
+      <option value="4">4 — bandeau entier</option>
+      <option value="3">3</option>
+      <option value="2">2</option>
+      <option value="1">1 — un seul encodeur</option>
+    </select>
+  </div>
+  <div class="hint">L'image est découpée en autant de tranches. Pose l'action sur ce nombre d'encodeurs, en partant de la gauche.</div>
+
+  <hr />
+
+  <div class="row">
+    <label></label>
+    <button id="reset" class="danger" type="button">Réinitialiser l'autorisation</button>
+  </div>
+  <div class="hint">Oublie le jeton et redemande un code, à approuver dans YTMD.</div>
+
+<script>
+  let ws = null;
+  let piUUID = null;
+  let actionUUID = null;
+  let settings = {};
+  let dirty = false;
+
+  const $ = function (id) { return document.getElementById(id); };
+
+  function connectElgatoStreamDeckSocket(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+    piUUID = inUUID;
+    try {
+      actionUUID = JSON.parse(inActionInfo).action;
+    } catch (e) {
+      actionUUID = 'eu.avonde.ytmdstrip.slice';
+    }
+
+    ws = new WebSocket('ws://127.0.0.1:' + inPort);
+
+    ws.onopen = function () {
+      ws.send(JSON.stringify({ event: inRegisterEvent, uuid: inUUID }));
+      ws.send(JSON.stringify({ event: 'getGlobalSettings', context: inUUID }));
+      toPlugin({ cmd: 'get-status' });
+    };
+
+    ws.onmessage = function (evt) {
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch (e) { return; }
+
+      if (msg.event === 'didReceiveGlobalSettings') {
+        settings = (msg.payload && msg.payload.settings) || {};
+        if (!dirty) { render(); }
+        return;
+      }
+
+      if (msg.event === 'sendToPropertyInspector' && msg.payload) {
+        showStatus(msg.payload.status, msg.payload.level);
+      }
+    };
+  }
+  window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
+
+  function toPlugin(payload) {
+    if (!ws || ws.readyState !== 1) { return; }
+    ws.send(JSON.stringify({
+      event: 'sendToPlugin',
+      action: actionUUID,
+      context: piUUID,
+      payload: payload,
+    }));
+  }
+
+  function saveGlobal() {
+    ws.send(JSON.stringify({
+      event: 'setGlobalSettings',
+      context: piUUID,
+      payload: settings,
+    }));
+  }
+
+  function render() {
+    $('host').value = settings.host || '';
+    $('port').value = settings.port || '';
+    $('slots').value = String(settings.slots || 4);
+  }
+
+  function showStatus(text, level) {
+    $('status').textContent = text;
+    $('dot').className = 'dot' + (level ? ' ' + level : '');
+  }
+
+  function commit() {
+    settings.host = $('host').value.trim() || '127.0.0.1';
+    const port = parseInt($('port').value, 10);
+    settings.port = (port >= 1 && port <= 65535) ? port : 9863;
+    settings.slots = parseInt($('slots').value, 10) || 4;
+    dirty = false;
+    saveGlobal();
+  }
+
+  ['host', 'port', 'slots'].forEach(function (id) {
+    $(id).addEventListener('input', function () { dirty = true; });
+    $(id).addEventListener('change', commit);
+  });
+  $('host').addEventListener('blur', commit);
+  $('port').addEventListener('blur', commit);
+
+  $('reset').addEventListener('click', function () {
+    showStatus('Réinitialisation…', 'warn');
+    toPlugin({ cmd: 'reset-auth' });
+  });
+</script>
+</body>
+</html>
