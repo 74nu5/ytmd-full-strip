@@ -1,9 +1,12 @@
 {
   "SDKVersion": 2,
+  "UUID": "dev.74nu5.ytmdstrip",
   "Author": "74nu5",
   "Name": "Full Strip for YTMD",
+  "Category": "Full Strip for YTMD",
+  "CategoryIcon": "icons/plugin",
   "Description": "Affiche la pochette et le titre en cours sur toute la largeur du bandeau du Stream Deck +. Necessite YouTube Music Desktop et son serveur companion.",
-  "Version": "1.0.0",
+  "Version": "1.0.0.0",
   "Icon": "icons/plugin",
   "URL": "https://github.com/74nu5/ytmd-full-strip",
   "CodePath": "action.html",
